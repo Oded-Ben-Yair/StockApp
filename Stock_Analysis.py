@@ -11,13 +11,6 @@ import requests
 import re
 
 ###############################################################################
-#                      Streamlit Config & File Watch                          #
-###############################################################################
-
-# Use the older, more widely supported setting to disable file watching:
-st.set_option("server.fileWatcherType", "none")
-
-###############################################################################
 #                           OpenAI Client Setup                               #
 ###############################################################################
 
@@ -112,16 +105,16 @@ def generate_recommendation_with_openai(stock_ticker, predictions, sentiment):
         )
         raw_text = response.choices[0].message.content.strip()
 
-        # 1) Remove the line containing the "Buy, Hold, or Sell?" instructions
+        # Remove the line containing the "Buy, Hold, or Sell?" instructions
         cleaned_text = raw_text.replace(
             "**(Buy, Hold, or Sell? Justify using SMA, EMA, RSI, earnings, or macro factors.)**",
             ""
         )
 
-        # 2) Convert '**' bold markdown to <strong> HTML tags for styling
+        # Convert '**' bold markdown to <strong> HTML tags for styling
         recommendation_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", cleaned_text)
 
-        # 3) Replace newlines with <br> for better layout in HTML
+        # Replace newlines with <br> for better layout in HTML
         recommendation_html = recommendation_html.replace("\n", "<br>")
 
         return recommendation_html
@@ -203,10 +196,10 @@ def forecast_next_weeks(stock_data, weeks=4):
 
 st.title("📈 Stock Analysis & Prediction App")
 
-# 1) Text input for ticker
+# Ticker input
 stock_ticker = st.text_input("Enter stock ticker (e.g., AAPL, TSLA, GOOG):").strip().upper()
 
-# 2) Disclaimer below the input, smaller font
+# Disclaimer in smaller font below input
 st.markdown(
     """
     <div style="font-size:0.85rem; color:#666; margin: 8px 0 20px 0;">
@@ -230,24 +223,18 @@ if stock_ticker:
     else:
         st.success(f"Got it! Evaluating {stock_ticker} stock...")
 
-        # 3) Forecast
         predictions = forecast_next_weeks(stock_data, weeks=4)
         plot_stock_data_with_predictions(stock_ticker, stock_data, predictions)
 
-        # 4) Table heading
         st.subheader("Projected Closing Prices for the Next 4 Weeks")
 
-        # Convert dict to DataFrame
+        # Create the forecasts table
         predictions_df = pd.DataFrame(list(predictions.items()), columns=["Projected Week", "Predicted Price ($)"])
-        # Format the price nicely
         predictions_df["Predicted Price ($)"] = predictions_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
-
-        # 5) Set "Projected Week" as the index to remove the extra integer column
         predictions_df.set_index("Projected Week", inplace=True)
 
         st.dataframe(predictions_df, use_container_width=True)
 
-        # 6) Sentiment & Recommendation
         sentiment = fetch_news_sentiment(stock_ticker)
         recommendation_html = generate_recommendation_with_openai(stock_ticker, predictions, sentiment)
 
