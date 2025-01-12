@@ -64,7 +64,7 @@ def generate_recommendation_with_openai(stock_ticker, predictions, sentiment):
     investment recommendation in plain language so most people can understand.
 
     **Stock:** {stock_ticker}  
-    **Predicted Prices (Next 4 Weeks):** {predictions}  
+    **Predicted Prices (Next 7 Days):** {predictions}  
     **Market Sentiment:** {sentiment}
 
     ---
@@ -139,36 +139,32 @@ def fetch_stock_data(stock_ticker, months=12):
     stock_data = stock_data.asfreq('B')
     return stock_data
 
-def forecast_next_weeks(stock_data, weeks=4):
+def forecast_next_7_days(stock_data):
     """
-    Generates ~4 weeks of business-day forecasts (about 20 days).
+    Generates a 7-business-day forecast using ARIMA.
     """
     y = stock_data['Close']
     # Fit ARIMA
     model = ARIMA(y, order=(5,1,0))
     model_fit = model.fit()
 
-    # 4 weeks * 5 business days = 20 steps
-    steps = weeks * 5
-
-    # Forecast 20 days
+    steps = 7  # next 7 business days
     forecast = model_fit.forecast(steps=steps)
     
-    # Build a dictionary: {date_string: predicted_price}
+    # Build dict: {date_string: price}
     predictions = {}
-    # Start from the day *after* the last day in the dataset
+    # Start from the day *after* the last historical date
     last_date = stock_data.index[-1]
     future_dates = pd.date_range(start=last_date, periods=steps+1, freq='B')[1:]
 
     for dt, pred in zip(future_dates, forecast):
-        # dt is a Timestamp, pred is the float forecast
         predictions[dt.strftime("%Y-%m-%d")] = round(float(pred), 2)
 
     return predictions
 
-def plot_only_forecast(stock_ticker, predictions):
+def plot_7_day_forecast(stock_ticker, predictions):
     """
-    Plots ONLY the forecast for the next 4 weeks (20 business days).
+    Plots ONLY the 7-day forecast data.
     """
     if not predictions:
         st.error("⚠️ No forecast data available to plot.")
@@ -179,14 +175,13 @@ def plot_only_forecast(stock_ticker, predictions):
         "Date": list(predictions.keys()),
         "Predicted Price": list(predictions.values())
     })
-    # Convert "Date" to datetime so Plotly can plot chronologically
     forecast_df["Date"] = pd.to_datetime(forecast_df["Date"])
 
     fig = px.line(
         forecast_df.sort_values("Date"),
         x="Date",
         y="Predicted Price",
-        title=f"{stock_ticker} - 4-Week Forecast",
+        title=f"{stock_ticker} - 7-Day Forecast",
         labels={"Predicted Price": "Price ($)", "Date": "Date"},
         template="plotly_white",
         line_shape="spline"
@@ -226,24 +221,22 @@ if stock_ticker:
     else:
         st.success(f"Got it! Evaluating {stock_ticker} stock...")
 
-        # Forecast for ~4 weeks
-        predictions = forecast_next_weeks(stock_data, weeks=4)
+        # Forecast for next 7 business days
+        predictions = forecast_next_7_days(stock_data)
+        # Plot only those predictions
+        plot_7_day_forecast(stock_ticker, predictions)
 
-        # Plot ONLY those future predictions
-        plot_only_forecast(stock_ticker, predictions)
-
-        st.subheader("Projected Closing Prices (Next 4 Weeks)")
-
-        # Convert the dict into a table
-        # Each key is a date string, each value is the predicted price
+        st.subheader("Projected Closing Prices (Next 7 Days)")
+        # Create the forecast table
         forecast_items = list(predictions.items())  # [(date_str, price), ...]
         forecast_df = pd.DataFrame(forecast_items, columns=["Date", "Predicted Price ($)"])
-        # Format prices
-        forecast_df["Predicted Price ($)"] = forecast_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
-        # Sort by date
+
         forecast_df["Date"] = pd.to_datetime(forecast_df["Date"])
         forecast_df.sort_values("Date", inplace=True)
         forecast_df.set_index("Date", inplace=True)
+
+        # Format the price
+        forecast_df["Predicted Price ($)"] = forecast_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
 
         st.dataframe(forecast_df, use_container_width=True)
 
