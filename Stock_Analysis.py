@@ -11,11 +11,11 @@ import requests
 import re
 
 ###############################################################################
-#                      Streamlit Config & Folder Watch                        #
+#                      Streamlit Config & File Watch                          #
 ###############################################################################
 
-# Disable folder watching to avoid "inotify instance limit reached" errors
-st.set_option('server.folderWatchMode', 'none')
+# Use the older, more widely supported setting to disable file watching:
+st.set_option("server.fileWatcherType", "none")
 
 ###############################################################################
 #                           OpenAI Client Setup                               #
