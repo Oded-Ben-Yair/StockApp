@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from openai import OpenAI
 from statsmodels.tsa.arima.model import ARIMA
 import requests
+import re
 
 ###############################################################################
 #                           OpenAI Client Setup                               #
@@ -102,8 +103,23 @@ def generate_recommendation_with_openai(stock_ticker, predictions, sentiment):
             ],
             max_tokens=500
         )
-        clean_response = response.choices[0].message.content.strip().replace("\n", "<br>")
-        return clean_response
+        raw_text = response.choices[0].message.content.strip()
+
+        # 1) Remove the line containing the "Buy, Hold, or Sell?" instructions
+        cleaned_text = raw_text.replace(
+            "**(Buy, Hold, or Sell? Justify using SMA, EMA, RSI, earnings, or macro factors.)**",
+            ""
+        )
+
+        # 2) Convert '**' bold markdown to <strong> HTML tags for styling
+        #    This regex finds pairs of ** and replaces them with <strong>...</strong>
+        #    so "**Hello**" becomes "<strong>Hello</strong>"
+        recommendation_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", cleaned_text)
+
+        # 3) Replace newlines with <br> for better layout in HTML
+        recommendation_html = recommendation_html.replace("\n", "<br>")
+
+        return recommendation_html
     except Exception as e:
         return f"❌ Error fetching recommendation from OpenAI API: {e}"
 
@@ -180,19 +196,24 @@ def forecast_next_weeks(stock_data, weeks=4):
 #                          Streamlit App Interface                            #
 ###############################################################################
 
-# ------------------ Disclaimer at the TOP (once only) ------------------
-st.markdown("""
-**Disclaimer:**
-This application is intended **solely** for technical demonstration and educational purposes. 
-It is **not** financial or investment advice. Do not make any investment decisions based on this content. 
-The creator assumes **no responsibility** for any actions taken based on the information presented. 
-Always consult a qualified financial professional before making any investment choices.
----
-""")
-
 st.title("📈 Stock Analysis & Prediction App")
 
+# Move the disclaimer BELOW the input bar and style it smaller
 stock_ticker = st.text_input("Enter stock ticker (e.g., AAPL, TSLA, GOOG):").strip().upper()
+
+st.markdown(
+    """
+    <div style="font-size:0.85rem; color:#666; margin: 8px 0 20px 0;">
+    <strong>Disclaimer:</strong> This application is intended <strong>solely</strong> 
+    for technical demonstration and educational purposes. It is <strong>not</strong> 
+    financial or investment advice. Do not make any investment decisions based on 
+    this content. The creator assumes <strong>no responsibility</strong> for any 
+    actions taken based on the information presented. Always consult a qualified 
+    financial professional before making any investment choices.
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 if stock_ticker:
     st.subheader(f"Analyzing {stock_ticker}...")
@@ -201,34 +222,35 @@ if stock_ticker:
     if stock_data.empty:
         st.error(f"⚠️ No data found for '{stock_ticker}'. Please check the ticker symbol.")
     else:
-        # Changed the success message:
         st.success(f"Got it! Evaluating {stock_ticker} stock...")
 
         # Forecast
         predictions = forecast_next_weeks(stock_data, weeks=4)
         plot_stock_data_with_predictions(stock_ticker, stock_data, predictions)
 
-        st.subheader("📊 Forecast for the Next 4 Weeks")
+        # Updated heading to clarify it’s showing future (projected) prices:
+        st.subheader("Projected Closing Prices for the Next 4 Weeks")
 
         # Convert dict to DataFrame
-        predictions_df = pd.DataFrame(list(predictions.items()), columns=["Week", "Predicted Price ($)"])
+        predictions_df = pd.DataFrame(list(predictions.items()), columns=["Projected Week", "Predicted Price ($)"])
         # Format the price nicely
         predictions_df["Predicted Price ($)"] = predictions_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
-        # Remove index and potential extra rows
+        # Remove index
         predictions_df.reset_index(drop=True, inplace=True)
 
         st.dataframe(predictions_df, use_container_width=True)
 
         sentiment = fetch_news_sentiment(stock_ticker)
 
-        recommendation = generate_recommendation_with_openai(stock_ticker, predictions, sentiment)
+        recommendation_html = generate_recommendation_with_openai(stock_ticker, predictions, sentiment)
         st.subheader("💡 Investment Recommendation")
 
+        # Display the final recommendation (already contains HTML styling)
         st.markdown(f"""
         <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background-color: #f9f9f9;">
-            <b>📌 Strategy:</b><br>
-            {recommendation} <br><br>
-            <b>📊 Market Sentiment:</b> {sentiment} <br>
+            {recommendation_html}
+            <br><br>
+            <strong>Market Sentiment:</strong> {sentiment}
         </div>
         """, unsafe_allow_html=True)
 
