@@ -109,7 +109,37 @@ def fetch_stock_data(stock_ticker, months=12):
     """
     end_date = datetime.now().date()
     start_date = end_date - timedelta(days=30 * months)  
-    return yf.download(stock_ticker, start=start_date, end=end_date, progress=False)
+    stock_data = yf.download(stock_ticker, start=start_date, end=end_date, progress=False)
+
+    # Ensure the DataFrame has a frequency set (Business Days)
+    stock_data = stock_data.asfreq('B')
+
+    return stock_data
+
+def forecast_next_weeks(stock_data, weeks=4):
+    """
+    Uses ARIMA to predict stock prices for the next few weeks.
+    """
+    # Ensure frequency is set
+    stock_data = stock_data.asfreq('B')  
+    
+    y = stock_data['Close']
+
+    # Fit the ARIMA model
+    model = ARIMA(y, order=(5,1,0))  
+    model_fit = model.fit()
+
+    predictions = {}
+
+    # Generate future dates with correct frequency
+    future_dates = pd.date_range(start=stock_data.index[-1], periods=weeks + 1, freq='B')[1:]
+
+    forecast = model_fit.forecast(steps=weeks)
+
+    for date, pred in zip(future_dates, forecast):
+        predictions[date.strftime("%Y-%m-%d")] = round(float(pred), 2)
+
+    return predictions
 
 def plot_stock_data_with_predictions(stock_ticker, stock_data, predictions):
     """
@@ -118,6 +148,7 @@ def plot_stock_data_with_predictions(stock_ticker, stock_data, predictions):
     if stock_data.empty:
         st.error("⚠️ No stock data available to plot.")
         return
+
 
     # Convert predictions dictionary into DataFrame
     pred_dates = pd.date_range(start=stock_data.index[-1], periods=len(predictions) + 1, freq='W')[1:]
