@@ -11,6 +11,13 @@ import requests
 import re
 
 ###############################################################################
+#                      Streamlit Config & Folder Watch                        #
+###############################################################################
+
+# Disable folder watching to avoid "inotify instance limit reached" errors
+st.set_option('server.folderWatchMode', 'none')
+
+###############################################################################
 #                           OpenAI Client Setup                               #
 ###############################################################################
 
@@ -112,8 +119,6 @@ def generate_recommendation_with_openai(stock_ticker, predictions, sentiment):
         )
 
         # 2) Convert '**' bold markdown to <strong> HTML tags for styling
-        #    This regex finds pairs of ** and replaces them with <strong>...</strong>
-        #    so "**Hello**" becomes "<strong>Hello</strong>"
         recommendation_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", cleaned_text)
 
         # 3) Replace newlines with <br> for better layout in HTML
@@ -153,7 +158,7 @@ def plot_stock_data_with_predictions(stock_ticker, stock_data, predictions):
     future_dates = pd.date_range(start=stock_data.index[-1], periods=len(predictions) + 1, freq='B')[1:]
     predictions_df = pd.DataFrame({"Date": future_dates, "Close": list(predictions.values())})
 
-    # Combine actual and predicted data into one line
+    # Combine actual and predicted data
     actual_df = stock_data.reset_index()[["Date", "Close"]]
     combined_df = pd.concat([actual_df, predictions_df], ignore_index=True)
 
@@ -198,9 +203,10 @@ def forecast_next_weeks(stock_data, weeks=4):
 
 st.title("📈 Stock Analysis & Prediction App")
 
-# Move the disclaimer BELOW the input bar and style it smaller
+# 1) Text input for ticker
 stock_ticker = st.text_input("Enter stock ticker (e.g., AAPL, TSLA, GOOG):").strip().upper()
 
+# 2) Disclaimer below the input, smaller font
 st.markdown(
     """
     <div style="font-size:0.85rem; color:#666; margin: 8px 0 20px 0;">
@@ -224,28 +230,29 @@ if stock_ticker:
     else:
         st.success(f"Got it! Evaluating {stock_ticker} stock...")
 
-        # Forecast
+        # 3) Forecast
         predictions = forecast_next_weeks(stock_data, weeks=4)
         plot_stock_data_with_predictions(stock_ticker, stock_data, predictions)
 
-        # Updated heading to clarify it’s showing future (projected) prices:
+        # 4) Table heading
         st.subheader("Projected Closing Prices for the Next 4 Weeks")
 
         # Convert dict to DataFrame
         predictions_df = pd.DataFrame(list(predictions.items()), columns=["Projected Week", "Predicted Price ($)"])
         # Format the price nicely
         predictions_df["Predicted Price ($)"] = predictions_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
-        # Remove index
-        predictions_df.reset_index(drop=True, inplace=True)
+
+        # 5) Set "Projected Week" as the index to remove the extra integer column
+        predictions_df.set_index("Projected Week", inplace=True)
 
         st.dataframe(predictions_df, use_container_width=True)
 
+        # 6) Sentiment & Recommendation
         sentiment = fetch_news_sentiment(stock_ticker)
-
         recommendation_html = generate_recommendation_with_openai(stock_ticker, predictions, sentiment)
+
         st.subheader("💡 Investment Recommendation")
 
-        # Display the final recommendation (already contains HTML styling)
         st.markdown(f"""
         <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background-color: #f9f9f9;">
             {recommendation_html}
