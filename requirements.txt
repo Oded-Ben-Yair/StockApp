@@ -1,0 +1,13 @@
+yfinance
+matplotlib
+pandas
+numpy
+scikit-learn
+statsmodels
+tensorflow
+openai
+streamlit
+plotly
+requests
+newsapi-python
+
