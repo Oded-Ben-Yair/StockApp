@@ -131,32 +131,25 @@ def fetch_stock_data(stock_ticker, months=12):
 
 def plot_stock_data_with_predictions(stock_ticker, stock_data, predictions):
     """
-    Plots actual closing prices and predicted future prices in a user-friendly format.
+    Plots historical closing prices plus forecasted future prices in a single line.
     """
     if stock_data.empty:
         st.error("⚠️ No stock data available to plot.")
         return
 
-    # Convert predictions dictionary into DataFrame
-    pred_dates = pd.date_range(start=stock_data.index[-1], periods=len(predictions) + 1, freq='W')[1:]
-    predictions_df = pd.DataFrame({"Date": pred_dates, "Close": list(predictions.values())})
+    # Create a DataFrame containing future dates and forecasted prices
+    future_dates = pd.date_range(start=stock_data.index[-1], periods=len(predictions) + 1, freq='B')[1:]
+    predictions_df = pd.DataFrame({"Date": future_dates, "Close": list(predictions.values())})
 
-    # Combine actual and predicted data
-    stock_data = stock_data.reset_index()
-    stock_data = stock_data[['Date', 'Close']]
-    stock_data['Type'] = 'Actual'
+    # Combine actual and predicted data into one line
+    actual_df = stock_data.reset_index()[["Date", "Close"]]
+    combined_df = pd.concat([actual_df, predictions_df], ignore_index=True)
 
-    predictions_df['Type'] = 'Predicted'
-
-    combined_df = pd.concat([stock_data, predictions_df])
-
-    # Create the line plot with Plotly Express for better readability
     fig = px.line(
         combined_df,
         x="Date",
         y="Close",
-        color="Type",
-        title=f"{stock_ticker} - Actual & Predicted Prices",
+        title=f"{stock_ticker} - Price (Historical & Forecast)",
         labels={"Close": "Price ($)", "Date": "Date"},
         template="plotly_white",
         line_shape="spline"
@@ -191,6 +184,16 @@ def forecast_next_weeks(stock_data, weeks=4):
 #                          Streamlit App Interface                            #
 ###############################################################################
 
+# ------------------ Disclaimer at the TOP (once only) ------------------
+st.markdown("""
+**Disclaimer:**
+This application is intended **solely** for technical demonstration and educational purposes. 
+It is **not** financial or investment advice. Do not make any investment decisions based on this content. 
+The creator assumes **no responsibility** for any actions taken based on the information presented. 
+Always consult a qualified financial professional before making any investment choices.
+---
+""")
+
 st.title("📈 Stock Analysis & Prediction App")
 
 stock_ticker = st.text_input("Enter stock ticker (e.g., AAPL, TSLA, GOOG):").strip().upper()
@@ -202,18 +205,25 @@ if stock_ticker:
     if stock_data.empty:
         st.error(f"⚠️ No data found for '{stock_ticker}'. Please check the ticker symbol.")
     else:
-        st.success("✅ Data fetched successfully!")
-        st.write(stock_data.tail())
+        # Changed the success message:
+        st.success(f"Got it! Evaluating {stock_ticker} stock...")
+
+        # Removed the redundant table:
+        # st.write(stock_data.tail())
 
         predictions = forecast_next_weeks(stock_data, weeks=4)
         plot_stock_data_with_predictions(stock_ticker, stock_data, predictions)
 
         st.subheader("📊 Forecast for the Next 4 Weeks")
-        
+
+        # Convert dict to DataFrame
         predictions_df = pd.DataFrame(list(predictions.items()), columns=["Week", "Predicted Price ($)"])
+
+        # Format the price
         predictions_df["Predicted Price ($)"] = predictions_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
 
-        st.data_editor(predictions_df, use_container_width=True, height=250)
+        # Display the table without the extra rows or index
+        st.dataframe(predictions_df.style.hide_index(), use_container_width=True)
 
         sentiment = fetch_news_sentiment(stock_ticker)
 
@@ -227,14 +237,4 @@ if stock_ticker:
             <b>📊 Market Sentiment:</b> {sentiment} <br>
         </div>
         """, unsafe_allow_html=True)
-
-# ------------------ Add Disclaimer Here ------------------
-st.markdown("""
----
-**Disclaimer:**
-This application is intended **solely** for technical demonstration and educational purposes. 
-It is **not** financial or investment advice. Do not make any investment decisions based on this content. 
-The creator assumes **no responsibility** for any actions taken based on the information presented. 
-Always consult a qualified financial professional before making any investment choices.
-""")
 
