@@ -49,7 +49,7 @@ def fetch_news_sentiment(stock_ticker):
         sentiment_score = sum(sentiment_scores) / max(len(sentiment_scores), 1)
         return "📈 Bullish" if sentiment_score > 0 else "📉 Bearish" if sentiment_score < 0 else "⚖️ Neutral"
     
-    except Exception as e:
+    except Exception:
         return "🔴 Unable to fetch sentiment data."
 
 def generate_recommendation_with_openai(stock_ticker, predictions, sentiment):
@@ -102,10 +102,7 @@ def generate_recommendation_with_openai(stock_ticker, predictions, sentiment):
             ],
             max_tokens=500
         )
-
-        # Clean up formatting
         clean_response = response.choices[0].message.content.strip().replace("\n", "<br>")
-
         return clean_response
     except Exception as e:
         return f"❌ Error fetching recommendation from OpenAI API: {e}"
@@ -126,7 +123,6 @@ def fetch_stock_data(stock_ticker, months=12):
 
     # Ensure the DataFrame has a frequency set (Business Days)
     stock_data = stock_data.asfreq('B')
-
     return stock_data
 
 def plot_stock_data_with_predictions(stock_ticker, stock_data, predictions):
@@ -208,9 +204,7 @@ if stock_ticker:
         # Changed the success message:
         st.success(f"Got it! Evaluating {stock_ticker} stock...")
 
-        # Removed the redundant table:
-        # st.write(stock_data.tail())
-
+        # Forecast
         predictions = forecast_next_weeks(stock_data, weeks=4)
         plot_stock_data_with_predictions(stock_ticker, stock_data, predictions)
 
@@ -218,12 +212,12 @@ if stock_ticker:
 
         # Convert dict to DataFrame
         predictions_df = pd.DataFrame(list(predictions.items()), columns=["Week", "Predicted Price ($)"])
-
-        # Format the price
+        # Format the price nicely
         predictions_df["Predicted Price ($)"] = predictions_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
+        # Remove index and potential extra rows
+        predictions_df.reset_index(drop=True, inplace=True)
 
-        # Display the table without the extra rows or index
-        st.dataframe(predictions_df.style.hide_index(), use_container_width=True)
+        st.dataframe(predictions_df, use_container_width=True)
 
         sentiment = fetch_news_sentiment(stock_ticker)
 
