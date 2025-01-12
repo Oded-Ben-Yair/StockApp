@@ -105,16 +105,16 @@ def generate_recommendation_with_openai(stock_ticker, predictions, sentiment):
         )
         raw_text = response.choices[0].message.content.strip()
 
-        # Remove the line containing the "Buy, Hold, or Sell?" instructions
+        # Remove the "Buy, Hold, or Sell?" instructions
         cleaned_text = raw_text.replace(
             "**(Buy, Hold, or Sell? Justify using SMA, EMA, RSI, earnings, or macro factors.)**",
             ""
         )
 
-        # Convert '**' bold markdown to <strong> HTML tags for styling
+        # Convert '**' bold markdown to <strong> HTML
         recommendation_html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", cleaned_text)
 
-        # Replace newlines with <br> for better layout in HTML
+        # Replace newlines with <br>
         recommendation_html = recommendation_html.replace("\n", "<br>")
 
         return recommendation_html
@@ -139,28 +139,55 @@ def fetch_stock_data(stock_ticker, months=12):
     stock_data = stock_data.asfreq('B')
     return stock_data
 
-def plot_stock_data_with_predictions(stock_ticker, stock_data, predictions):
+def forecast_next_weeks(stock_data, weeks=4):
     """
-    Plots historical closing prices plus forecasted future prices in a single line.
+    Generates ~4 weeks of business-day forecasts (about 20 days).
     """
-    if stock_data.empty:
-        st.error("⚠️ No stock data available to plot.")
+    y = stock_data['Close']
+    # Fit ARIMA
+    model = ARIMA(y, order=(5,1,0))
+    model_fit = model.fit()
+
+    # 4 weeks * 5 business days = 20 steps
+    steps = weeks * 5
+
+    # Forecast 20 days
+    forecast = model_fit.forecast(steps=steps)
+    
+    # Build a dictionary: {date_string: predicted_price}
+    predictions = {}
+    # Start from the day *after* the last day in the dataset
+    last_date = stock_data.index[-1]
+    future_dates = pd.date_range(start=last_date, periods=steps+1, freq='B')[1:]
+
+    for dt, pred in zip(future_dates, forecast):
+        # dt is a Timestamp, pred is the float forecast
+        predictions[dt.strftime("%Y-%m-%d")] = round(float(pred), 2)
+
+    return predictions
+
+def plot_only_forecast(stock_ticker, predictions):
+    """
+    Plots ONLY the forecast for the next 4 weeks (20 business days).
+    """
+    if not predictions:
+        st.error("⚠️ No forecast data available to plot.")
         return
 
-    # Create a DataFrame containing future dates and forecasted prices
-    future_dates = pd.date_range(start=stock_data.index[-1], periods=len(predictions) + 1, freq='B')[1:]
-    predictions_df = pd.DataFrame({"Date": future_dates, "Close": list(predictions.values())})
-
-    # Combine actual and predicted data
-    actual_df = stock_data.reset_index()[["Date", "Close"]]
-    combined_df = pd.concat([actual_df, predictions_df], ignore_index=True)
+    # Convert the predictions dict to a DataFrame
+    forecast_df = pd.DataFrame({
+        "Date": list(predictions.keys()),
+        "Predicted Price": list(predictions.values())
+    })
+    # Convert "Date" to datetime so Plotly can plot chronologically
+    forecast_df["Date"] = pd.to_datetime(forecast_df["Date"])
 
     fig = px.line(
-        combined_df,
+        forecast_df.sort_values("Date"),
         x="Date",
-        y="Close",
-        title=f"{stock_ticker} - Price (Historical & Forecast)",
-        labels={"Close": "Price ($)", "Date": "Date"},
+        y="Predicted Price",
+        title=f"{stock_ticker} - 4-Week Forecast",
+        labels={"Predicted Price": "Price ($)", "Date": "Date"},
         template="plotly_white",
         line_shape="spline"
     )
@@ -168,38 +195,14 @@ def plot_stock_data_with_predictions(stock_ticker, stock_data, predictions):
     st.plotly_chart(fig, use_container_width=True)
 
 ###############################################################################
-#                           Forecasting Logic                                 #
-###############################################################################
-
-def forecast_next_weeks(stock_data, weeks=4):
-    """
-    Uses the ARIMA model (a statistical approach) to forecast the next 
-    `weeks` closing prices. ARIMA uses past price data to predict future 
-    price movements. These predictions are purely illustrative.
-    """
-    y = stock_data['Close']
-    
-    model = ARIMA(y, order=(5,1,0))
-    model_fit = model.fit()
-
-    predictions = {}
-    forecast = model_fit.forecast(steps=weeks)
-
-    for i, pred in enumerate(forecast):
-        predictions[f"Week {i+1}"] = round(float(pred), 2)
-
-    return predictions
-
-###############################################################################
 #                          Streamlit App Interface                            #
 ###############################################################################
 
 st.title("📈 Stock Analysis & Prediction App")
 
-# Ticker input
 stock_ticker = st.text_input("Enter stock ticker (e.g., AAPL, TSLA, GOOG):").strip().upper()
 
-# Disclaimer in smaller font below input
+# Disclaimer in smaller font
 st.markdown(
     """
     <div style="font-size:0.85rem; color:#666; margin: 8px 0 20px 0;">
@@ -223,23 +226,31 @@ if stock_ticker:
     else:
         st.success(f"Got it! Evaluating {stock_ticker} stock...")
 
+        # Forecast for ~4 weeks
         predictions = forecast_next_weeks(stock_data, weeks=4)
-        plot_stock_data_with_predictions(stock_ticker, stock_data, predictions)
 
-        st.subheader("Projected Closing Prices for the Next 4 Weeks")
+        # Plot ONLY those future predictions
+        plot_only_forecast(stock_ticker, predictions)
 
-        # Create the forecasts table
-        predictions_df = pd.DataFrame(list(predictions.items()), columns=["Projected Week", "Predicted Price ($)"])
-        predictions_df["Predicted Price ($)"] = predictions_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
-        predictions_df.set_index("Projected Week", inplace=True)
+        st.subheader("Projected Closing Prices (Next 4 Weeks)")
 
-        st.dataframe(predictions_df, use_container_width=True)
+        # Convert the dict into a table
+        # Each key is a date string, each value is the predicted price
+        forecast_items = list(predictions.items())  # [(date_str, price), ...]
+        forecast_df = pd.DataFrame(forecast_items, columns=["Date", "Predicted Price ($)"])
+        # Format prices
+        forecast_df["Predicted Price ($)"] = forecast_df["Predicted Price ($)"].apply(lambda x: f"${x:,.2f}")
+        # Sort by date
+        forecast_df["Date"] = pd.to_datetime(forecast_df["Date"])
+        forecast_df.sort_values("Date", inplace=True)
+        forecast_df.set_index("Date", inplace=True)
+
+        st.dataframe(forecast_df, use_container_width=True)
 
         sentiment = fetch_news_sentiment(stock_ticker)
         recommendation_html = generate_recommendation_with_openai(stock_ticker, predictions, sentiment)
 
         st.subheader("💡 Investment Recommendation")
-
         st.markdown(f"""
         <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px; background-color: #f9f9f9;">
             {recommendation_html}
